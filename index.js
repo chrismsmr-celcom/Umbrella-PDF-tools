@@ -2,6 +2,7 @@ import express from "express";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
+import cors from "cors";
 import { fileURLToPath } from "url";
 
 const app = express();
@@ -11,15 +12,18 @@ const upload = multer({ dest: "uploads/" });
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Servir le frontend (pdf-to-word.html)
+// Autoriser CORS pour toutes les requêtes
+app.use(cors());
+
+// Servir le frontend
 app.use(express.static(path.join(__dirname, "public")));
 
-// Route d’accueil
+// Route d’accueil pour ouvrir pdf-to-word.html
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "pdf-to-word.html"));
 });
 
-// Route de conversion PDF → DOCX
+// Route pour convertir PDF → DOCX
 app.post("/convert", upload.single("file"), async (req, res) => {
   try {
     const pdfPath = req.file.path;
@@ -43,17 +47,14 @@ app.post("/convert", upload.single("file"), async (req, res) => {
     });
 
     // 3️⃣ Convertir PDF → DOCX
-    const convertRes = await fetch(
-      "https://api.pdf.co/v1/pdf/convert/to/docx",
-      {
-        method: "POST",
-        headers: {
-          "x-api-key": process.env.PDFCO_API_KEY,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ url: uploadData.url, async: false })
-      }
-    );
+    const convertRes = await fetch("https://api.pdf.co/v1/pdf/convert/to/docx", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.PDFCO_API_KEY,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ url: uploadData.url, async: false })
+    });
     const result = await convertRes.json();
 
     if (!result.url) {
@@ -77,12 +78,12 @@ app.post("/convert", upload.single("file"), async (req, res) => {
 
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: "Conversion failed" });
+    res.status(500).json({ error: "Conversion failed", details: e.message });
   }
 });
 
 // Lancer le serveur
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Backend running on port ${PORT}`);
+  console.log(`Backend PDF → Word running on port ${PORT}`);
 });
