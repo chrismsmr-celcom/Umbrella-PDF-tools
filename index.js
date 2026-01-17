@@ -20,7 +20,7 @@ app.use(express.static(path.join(__dirname, "public")));
 
 // Route d’accueil pour ouvrir pdf-to-word.html
 app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "pdf-to-word.html"));
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 // Route pour convertir PDF → DOCX
