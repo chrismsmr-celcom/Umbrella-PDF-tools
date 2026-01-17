@@ -1,49 +1,68 @@
-const express = require("express");
-const multer = require("multer");
-const path = require("path");
-const fs = require("fs");
-const { PDFServicesClient } = require("@adobe/pdfservices-node-sdk"); // adapte si nécessaire
-
-require("dotenv").config();
+import express from "express";
+import multer from "multer";
+import fetch from "node-fetch";
+import fs from "fs";
+import path from "path";
 
 const app = express();
-const port = process.env.PORT || 3000;
-
-// Middleware pour servir les fichiers statiques (HTML, CSS, JS)
-app.use(express.static(__dirname));
-
-// --- Multer setup pour upload ---
 const upload = multer({ dest: "uploads/" });
 
-// --- Endpoint PDF → Word ---
-app.post("/pdf-to-word", upload.single("file"), async (req, res) => {
+app.post("/convert", upload.single("file"), async (req, res) => {
   try {
-    const file = req.file;
-    if (!file) return res.status(400).json({ message: "Aucun fichier uploadé" });
+    const pdfPath = req.file.path;
 
-    // --- Ici tu mets ton code Adobe PDF Services pour convertir ---
-    // Exemple minimal (à adapter selon ton SDK / credentials)
-    const outputPath = `outputs/${file.originalname.replace(".pdf", ".docx")}`;
-    fs.mkdirSync("outputs", { recursive: true });
-
-    // Simulation conversion pour test frontend
-    fs.copyFileSync(file.path, outputPath);
-
-    // Envoie le fichier DOCX au frontend
-    res.download(outputPath, err => {
-      // Supprime les fichiers temporaires
-      fs.unlinkSync(file.path);
-      fs.unlinkSync(outputPath);
-      if (err) console.error(err);
+    // 1. Upload PDF to PDF.co
+    const uploadRes = await fetch("https://api.pdf.co/v1/file/upload", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.PDFCO_API_KEY
+      }
     });
 
+    const uploadData = await uploadRes.json();
+    if (!uploadData.presignedUrl) {
+      return res.status(400).json(uploadData);
+    }
+
+    await fetch(uploadData.presignedUrl, {
+      method: "PUT",
+      body: fs.createReadStream(pdfPath),
+      headers: { "Content-Type": "application/pdf" }
+    });
+
+    // 2. Convert PDF → DOCX
+    const convertRes = await fetch("https://api.pdf.co/v1/pdf/convert/to/docx", {
+      method: "POST",
+      headers: {
+        "x-api-key": process.env.PDFCO_API_KEY,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        url: uploadData.url,
+        async: false
+      })
+    });
+
+    const result = await convertRes.json();
+    if (!result.url) {
+      return res.status(400).json(result);
+    }
+
+    // 3. Download DOCX
+    const docxRes = await fetch(result.url);
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=converted.docx"
+    );
+    docxRes.body.pipe(res);
+
+    fs.unlinkSync(pdfPath);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: "Erreur serveur lors de la conversion" });
+    res.status(500).json({ error: "Conversion failed" });
   }
 });
 
-// --- Démarrage du serveur ---
-app.listen(port, () => {
-  console.log(`Serveur lancé sur http://localhost:${port}`);
-});
+app.listen(process.env.PORT || 3000, () =>
+  console.log("Server running")
+);
