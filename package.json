@@ -1,5 +1,5 @@
 {
-  "name": "pdf-backend",
+  "name": "pdf-to-word-backend",
   "version": "1.0.0",
   "type": "module",
   "main": "index.js",
@@ -7,10 +7,9 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
-    "cors": "^2.8.5",
+    "@adobe/pdfservices-node-sdk": "^4.3.0",
+    "express": "^4.18.2",
     "multer": "^1.4.5-lts.1",
-    "node-fetch": "^3.3.2",
-    "form-data": "^4.0.0"
+    "dotenv": "^16.0.3"
   }
 }
