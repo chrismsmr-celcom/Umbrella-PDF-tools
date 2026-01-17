@@ -1,17 +1,17 @@
 import express from "express";
 import multer from "multer";
 import fs from "fs";
-import fetch from "node-fetch";
-import FormData from "form-data";
 import path from "path";
+import PDFServicesSdk from "@adobe/pdfservices-node-sdk";
+import dotenv from "dotenv";
 
+dotenv.config();
 const app = express();
 const upload = multer({ dest: "uploads/" });
 
-// Simple Free / Premium simulation
-const FREE_LIMIT = true; // true = fichier Free, false = Premium
+// Free / Premium simulation
+const FREE_LIMIT = process.env.FREE_LIMIT === "true";
 
-// Endpoint PDF → Word
 app.post("/pdf-to-word", upload.single("file"), async (req, res) => {
   try {
     const file = req.file;
@@ -21,37 +21,34 @@ app.post("/pdf-to-word", upload.single("file"), async (req, res) => {
       return res.status(403).json({ message: "Fonction Premium verrouillée 🔒" });
     }
 
-    // Appel Adobe PDF Services via REST
-    const adobeForm = new FormData();
-    adobeForm.append("file", fs.createReadStream(file.path));
+    // Setup Adobe SDK
+    const credentials = PDFServicesSdk.Credentials.servicePrincipalCredentialsBuilder()
+      .withClientId(process.env.ADOBE_CLIENT_ID)
+      .withClientSecret(process.env.ADOBE_CLIENT_SECRET)
+      .build();
 
-    const adobeRes = await fetch(
-      "https://pdf-services.adobe.io/operation/export/pdf",
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${process.env.ADOBE_CLIENT_ID}:${process.env.ADOBE_CLIENT_SECRET}`
-        },
-        body: adobeForm
-      }
-    );
+    const executionContext = PDFServicesSdk.ExecutionContext.create(credentials);
+    const ExportPDFOperation = PDFServicesSdk.ExportPDF.Operation;
 
-    if (!adobeRes.ok) {
-      return res.status(500).send("Erreur conversion Adobe");
-    }
+    const inputPDF = PDFServicesSdk.FileRef.createFromLocalFile(file.path);
 
-    const buffer = Buffer.from(await adobeRes.arrayBuffer());
+    const exportPDFOperation = ExportPDFOperation.createNew(ExportPDFOperation.SupportedTargetFormats.DOCX);
+    exportPDFOperation.setInput(inputPDF);
 
-    // Envoi du fichier DOCX au frontend
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${path.parse(file.originalname).name}.docx"`
-    );
-    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-    res.send(buffer);
+    // Execute
+    const result = await exportPDFOperation.execute(executionContext);
 
-    // Supprime le PDF temporaire
-    fs.unlinkSync(file.path);
+    // Sauvegarde temporaire
+    fs.mkdirSync("outputs", { recursive: true });
+    const outputPath = `outputs/${path.parse(file.originalname).name}.docx`;
+    await result.saveAsFile(outputPath);
+
+    // Envoi au frontend
+    res.download(outputPath, `${path.parse(file.originalname).name}.docx`, err => {
+      if (err) console.error(err);
+      fs.unlinkSync(file.path);
+      fs.unlinkSync(outputPath);
+    });
 
   } catch (err) {
     console.error(err);
@@ -59,7 +56,6 @@ app.post("/pdf-to-word", upload.single("file"), async (req, res) => {
   }
 });
 
-// Test serveur
 app.get("/", (req, res) => {
   res.send("PDF backend is running 🚀");
 });
