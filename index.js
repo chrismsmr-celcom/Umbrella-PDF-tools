@@ -1,64 +1,49 @@
-import express from "express";
-import multer from "multer";
-import fs from "fs";
-import path from "path";
-import PDFServicesSdk from "@adobe/pdfservices-node-sdk";
-import dotenv from "dotenv";
+const express = require("express");
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+const { PDFServicesClient } = require("@adobe/pdfservices-node-sdk"); // adapte si nécessaire
 
-dotenv.config();
+require("dotenv").config();
+
 const app = express();
+const port = process.env.PORT || 3000;
+
+// Middleware pour servir les fichiers statiques (HTML, CSS, JS)
+app.use(express.static(__dirname));
+
+// --- Multer setup pour upload ---
 const upload = multer({ dest: "uploads/" });
 
-// Free / Premium simulation
-const FREE_LIMIT = process.env.FREE_LIMIT === "true";
-
+// --- Endpoint PDF → Word ---
 app.post("/pdf-to-word", upload.single("file"), async (req, res) => {
   try {
     const file = req.file;
-    if (!file) return res.status(400).send("Aucun fichier reçu");
+    if (!file) return res.status(400).json({ message: "Aucun fichier uploadé" });
 
-    if (!FREE_LIMIT) {
-      return res.status(403).json({ message: "Fonction Premium verrouillée 🔒" });
-    }
-
-    // Setup Adobe SDK
-    const credentials = PDFServicesSdk.Credentials.servicePrincipalCredentialsBuilder()
-      .withClientId(process.env.ADOBE_CLIENT_ID)
-      .withClientSecret(process.env.ADOBE_CLIENT_SECRET)
-      .build();
-
-    const executionContext = PDFServicesSdk.ExecutionContext.create(credentials);
-    const ExportPDFOperation = PDFServicesSdk.ExportPDF.Operation;
-
-    const inputPDF = PDFServicesSdk.FileRef.createFromLocalFile(file.path);
-
-    const exportPDFOperation = ExportPDFOperation.createNew(ExportPDFOperation.SupportedTargetFormats.DOCX);
-    exportPDFOperation.setInput(inputPDF);
-
-    // Execute
-    const result = await exportPDFOperation.execute(executionContext);
-
-    // Sauvegarde temporaire
+    // --- Ici tu mets ton code Adobe PDF Services pour convertir ---
+    // Exemple minimal (à adapter selon ton SDK / credentials)
+    const outputPath = `outputs/${file.originalname.replace(".pdf", ".docx")}`;
     fs.mkdirSync("outputs", { recursive: true });
-    const outputPath = `outputs/${path.parse(file.originalname).name}.docx`;
-    await result.saveAsFile(outputPath);
 
-    // Envoi au frontend
-    res.download(outputPath, `${path.parse(file.originalname).name}.docx`, err => {
-      if (err) console.error(err);
+    // Simulation conversion pour test frontend
+    fs.copyFileSync(file.path, outputPath);
+
+    // Envoie le fichier DOCX au frontend
+    res.download(outputPath, err => {
+      // Supprime les fichiers temporaires
       fs.unlinkSync(file.path);
       fs.unlinkSync(outputPath);
+      if (err) console.error(err);
     });
 
   } catch (err) {
     console.error(err);
-    res.status(500).send("Erreur lors de la conversion PDF → Word");
+    res.status(500).json({ message: "Erreur serveur lors de la conversion" });
   }
 });
 
-app.get("/", (req, res) => {
-  res.send("PDF backend is running 🚀");
+// --- Démarrage du serveur ---
+app.listen(port, () => {
+  console.log(`Serveur lancé sur http://localhost:${port}`);
 });
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT} 🚀`));
